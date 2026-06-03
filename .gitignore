@@ -2,6 +2,9 @@
 config.json
 .env
 
+# 大型安装脚本
+*.sh
+
 # Python
 __pycache__/
 *.py[cod]
