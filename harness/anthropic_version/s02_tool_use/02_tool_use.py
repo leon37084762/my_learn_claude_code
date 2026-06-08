@@ -3,6 +3,7 @@ import os
 from re import L
 import subprocess
 import platform
+from pathlib import Path
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
@@ -25,13 +26,13 @@ MODEL = os.getenv("ANTHROPIC_MODEL")
 print(MODEL)
 
 # 使用脚本所在目录，避免 WSL 挂载路径的编码问题
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 # 获取安全的当前工作目录
 try:
     CWD = os.path.abspath('.')
     CWD = CWD.encode('ascii', errors='ignore').decode('ascii')
 except:
-    CWD = SCRIPT_DIR
+    CWD = str(SCRIPT_DIR)
 
 
 # 检测操作系统并生成对应的 SYSTEM 提示词
@@ -166,7 +167,7 @@ def safe_path(p:str) -> Path:
         raise ValueError(f"Path escapes workspace: {p}")
     return path
 
-def run_read(path:str,limit:init | None=None)->str:
+def run_read(path:str,limit:int | None=None)->str:
     try:
         lines=safe_path(path).read_text().splitlines()
         if limit and limit < len(lines):
@@ -277,7 +278,7 @@ def agent_loop(messages:list):
         results = []
         for block in response.content:
             if block.type == "tool_use":
-                print(f"\033[33m$ {block.input['command']}\033[0m")
+                print(f"\033[33m$ {block.name}\033[0m")
                 handler = TOOL_HANDLERS.get(block.name)
                 output = handler(**block.input) if handler else f"Error: Tool not found: {block.name}"
                 # 清理输出
