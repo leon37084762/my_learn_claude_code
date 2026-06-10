@@ -1,21 +1,21 @@
+"""
+使用自定义 API 库的 Agent Trace 程序
+替代 Anthropic SDK，直接使用 requests 调用 API
+"""
+
 import os
 import json
 import logging
-from anthropic import Anthropic
 from pydantic import BaseModel, ValidationError
 from dotenv import load_dotenv
+
+# 导入自定义 API 库
+from anthropic_api import AnthropicClient, clean_string
 
 # 加载环境变量
 load_dotenv(override=True)
 
-# 清理字符串中的 surrogate characters
-def clean_string(s: str) -> str:
-    """移除字符串中的 surrogate characters，确保可以安全编码为 UTF-8"""
-    if not isinstance(s, str):
-        return s
-    return ''.join(c for c in s if not (0xD800 <= ord(c) <= 0xDFFF))
-
-# 配置日志：这是最轻量、最直观的跟踪方式
+# 配置日志
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s | %(levelname)-8s | %(message)s',
@@ -26,20 +26,20 @@ logging.basicConfig(
 if not os.getenv("ANTHROPIC_API_KEY"):
     print("Anthropic API Key not found")
 
-# 使用与 01_agent_loop.py 相同的配置
+# 使用环境变量配置
 base_model_url = os.getenv("ANTHROPIC_BASE_URL")
 MODEL = os.getenv("ANTHROPIC_MODEL")
 print(f"[Base URL: {base_model_url}]")
 print(f"[Model: {MODEL}]")
 
-# 初始化客户端
-client = Anthropic(base_url=base_model_url)
+# 初始化自定义客户端
+client = AnthropicClient(base_url=base_model_url)
 
-# 2. 定义工具的参数结构 (用于 Pydantic 确定性校验)
+# 定义工具的参数结构 (用于 Pydantic 确定性校验)
 class BashCommandArgs(BaseModel):
     command: str
 
-# 3. 定义 Anthropic 工具 Schema
+# 定义 Anthropic 工具 Schema
 TOOLS = [
     {
         "name": "execute_bash",
@@ -59,9 +59,6 @@ def run_and_trace_agent(user_input: str, system_prompt: str) -> dict:
     运行 Agent 并跟踪其输出的确定性
     返回一个结构化的字典，包含执行状态和提取的数据
     """
-    # 初始化客户端 (请确保设置了 ANTHROPIC_API_KEY 环境变量)
-    client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "your-api-key-here"))
-    
     logging.info(f"📥 INPUT: {user_input}")
     
     trace_result = {
@@ -69,26 +66,29 @@ def run_and_trace_agent(user_input: str, system_prompt: str) -> dict:
         "status": "unknown",
         "tool_called": None,
         "validated_command": None,
-        "violations": []
+        "violations": [],
+        "text_output": ""
     }
 
     try:
-        # 调用 API
-        response = client.messages.create(
+        # 使用自定义 API 库调用（替代 client.messages.create）
+        response = client.messages_create(
             model=MODEL,
             system=system_prompt,
             messages=[{"role": "user", "content": clean_string(user_input)}],
             tools=TOOLS,
             max_tokens=1000,
-            # 【关键】: 强制模型必须调用工具，从源头减少不确定性
-            #tool_choice={"type": "any"} 
         )
+        
         logging.info(f"📦 API RESPONSE RECEIVED: {response}")
         logging.info("📦 API RESPONSE RECEIVED. Parsing content blocks...")
+        
         has_tool_use = False
+        
         # --- 核心跟踪逻辑：遍历响应块 ---
         for block in response.content:
             if block.type == "tool_use":
+                has_tool_use = True
                 trace_result["tool_called"] = block.name
                 logging.info(f"🛠️ TOOL CALLED: '{block.name}'")
                 
@@ -103,29 +103,19 @@ def run_and_trace_agent(user_input: str, system_prompt: str) -> dict:
                     logging.error(f"❌ {violation_msg}")
                     
             elif block.type == "text":
-                # 【确定性校验 2】: 捕获违反 "Act, don't explain" 的行为
-                # violation_msg = f"Unexpected text output (Agent is explaining instead of acting): '{block.text[:100]}...'"
-                # trace_result["violations"].append(violation_msg)
-                # logging.warning(f"⚠️ {violation_msg}")
                 trace_result["text_output"] += block.text
                 if "Act, don't explain" in system_prompt:
                     violation_msg = f"Unexpected text output (Agent is explaining instead of acting): '{block.text[:100]}...'"
                     trace_result["violations"].append(violation_msg)
                     logging.warning(f"⚠️ {violation_msg}")
+        
+        # --- 最终状态判定 ---
         if has_tool_use and not trace_result["violations"]:
             trace_result["status"] = "SUCCESS"
             logging.info("🎯 TRACE RESULT: SUCCESS (Fully deterministic behavior)")
         else:
             trace_result["status"] = "FAILURE"
             logging.error(f"🚨 TRACE RESULT: FAILURE. Violations: {trace_result['violations']}")
-
-        # # --- 最终状态判定 ---
-        # if trace_result["tool_called"] == "execute_bash" and not trace_result["violations"]:
-        #     trace_result["status"] = "SUCCESS"
-        #     logging.info("🎯 TRACE RESULT: SUCCESS (Fully deterministic behavior)")
-        # else:
-        #     trace_result["status"] = "FAILURE"
-        #     logging.error(f"🚨 TRACE RESULT: FAILURE. Violations: {trace_result['violations']}")
 
     except Exception as e:
         trace_result["status"] = "ERROR"
