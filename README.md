@@ -1,6 +1,8 @@
 # Learn Claude Code - AI Agent 学习笔记
 
-原 [learn claude code](https://github.com/anthropics/learn-claude-code) 教程使用 Anthropic API，本项目将其改造为使用 OpenAI 兼容 API（如阿里云 DashScope），方便国内用户使用。
+原 [learn claude code](https://github.com/anthropics/learn-claude-code) 教程使用 Anthropic API，本项目将其改造为：
+1. **OpenAI 兼容 API**（如阿里云 DashScope），方便国内用户使用
+2. **Anthropic 原生 API**，支持标准 Anthropic 接口和自定义端点
 
 ## 项目简介
 
@@ -8,6 +10,7 @@
 - **ReAct 模式**：推理(Reasoning) + 行动(Acting) 的循环
 - **工具调用**：LLM 如何决定使用外部工具
 - **安全防护**：防止越狱和恶意输入（本项目的扩展探索）
+- **跨平台兼容**：Windows/Linux/WSL/macOS 全平台支持
 
 > **说明**：原 [learn claude code](https://github.com/anthropics/learn-claude-code) 教程仅实现了基础 Agent 功能，工具调用时仅做了简单的危险命令过滤（如 rm -rf）。本项目在探索对话 Agent 的过程中，**特别添加了安全防护模块**（input_guard.py、intent_guard.py），实现了规则匹配和意图分析两种防护策略，作为对原项目的扩展。
 
@@ -17,6 +20,7 @@
 learn_claude_code/
 ├── config.json              # API 配置（需手动创建，已加入 .gitignore）
 ├── config.json.example      # 配置示例
+├── .env                     # Anthropic 版本环境变量配置（已加入 .gitignore）
 ├── requirements.txt         # 依赖：openai>=2.0.0
 │
 ├── 00_ai_chat.py           # 基础聊天（问题版本，供学习）
@@ -31,12 +35,29 @@ learn_claude_code/
 ├── intent_guard.py         # 意图分析模块（LLM 判断）
 ├── react_example.py        # ReAct 模式示例
 │
+├── harness/                # Anthropic 原生 API 版本
+│   └── anthropic_version/
+│       ├── s00_agent_trace/        # Agent 行为跟踪测试
+│       │   ├── anthropic_api.py           # 自定义 API 封装库（requests）
+│       │   ├── s00_llm_api.py             # API 测试脚本
+│       │   ├── s00_llm_api_trace.py       # 使用自定义库的 trace 程序
+│       │   └── s00_agent_trace.py         # 原始 trace 程序
+│       │
+│       ├── s01_agent_loop/       # Agent 循环实现
+│       │   ├── 01_agent_loop.py           # 支持 bash 工具的 Agent
+│       │   └── requirements.txt
+│       │
+│       └── s02_tool_use/       # 多工具支持
+│           └── 02_tool_use.py             # 支持 bash/read/write/edit
+│
 └── README.md               # 本文件
 ```
 
 ## 快速开始
 
-### 1. 配置环境
+### 方案一：OpenAI 兼容 API
+
+#### 1. 配置环境
 
 ```bash
 # 创建 conda 环境
@@ -47,7 +68,7 @@ conda activate agent_env
 pip install -r requirements.txt
 ```
 
-### 2. 配置 API
+#### 2. 配置 API
 
 复制示例配置文件并填写你的 API 信息：
 
@@ -65,9 +86,9 @@ cp config.json.example config.json
 }
 ```
 
-> ⚠️ `config.json` 已加入 `.gitignore`，不会被提交到 Git。
 
-### 3. 运行示例
+
+#### 3. 运行示例
 
 ```bash
 # 基础聊天
@@ -78,6 +99,52 @@ python 00_ai_chat_intent.py
 
 # Agent 模式（可执行 bash 命令）
 python 01_agent.py
+```
+
+---
+
+### 方案二：Anthropic 原生 API
+
+#### 1. 配置环境
+
+```bash
+# 创建 conda 环境
+conda create -n learn_claude_code python=3.12 -y
+conda activate learn_claude_code
+
+# 安装 Anthropic 版本依赖
+pip install -r harness/anthropic_version/s01_agent_loop/requirements.txt
+```
+
+#### 2. 配置环境变量
+
+创建 `.env` 文件：
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env`：
+
+```env
+ANTHROPIC_BASE_URL=https://dashscope.aliyuncs.com/apps/anthropic
+ANTHROPIC_API_KEY=your-api-key-here
+ANTHROPIC_MODEL=qwen3.7-max
+```
+
+> ⚠️ `.env` 已加入 `.gitignore`，不会被提交到 Git。
+
+#### 3. 运行示例
+
+```bash
+# Agent 循环（支持 bash 工具）
+python harness/anthropic_version/s01_agent_loop/01_agent_loop.py
+
+# Agent 行为跟踪测试
+python harness/anthropic_version/s00_agent_trace/s00_llm_api_trace.py
+
+# 多工具支持
+python harness/anthropic_version/s02_tool_use/02_tool_use.py
 ```
 
 ## 核心概念
@@ -148,7 +215,30 @@ if response.choices[0].finish_reason == "tool_calls":
 | 意图分析 | ❌ 无 | ✅ Guard LLM |
 | 语义理解 | ❌ 无 | ✅ 支持 |
 
+### 5. 跨平台特性（Anthropic 版本）
+
+本项目 Anthropic 版本支持 **Windows/Linux/WSL/macOS** 全平台：
+
+- **自动系统检测**：运行时自动识别操作系统
+- **动态命令适配**：根据系统生成合适的命令（如 Windows 用 dir，Linux 用 ls）
+- **编码问题处理**：
+  - 解决 WSL 访问 Windows 文件系统的 UTF-8 编码问题
+  - 处理 Windows GBK 和 UTF-8 的编码冲突
+  - 过滤 surrogate characters（U+D800-U+DFFF）
+- **路径安全**：使用 `pathlib.Path` 确保路径操作安全
+
+### 6. 自定义 API 封装
+
+Anthropic 版本提供了**不依赖官方 SDK** 的 API 封装：
+
+- **anthropic_api.py**：使用 `requests` 直接调用 Anthropic API
+- **完全兼容**：模拟官方 SDK 的响应格式
+- **轻量级**：减少依赖，便于定制和调试
+- **统一配置**：所有脚本共享相同的环境变量配置
+
 ## 学习路径
+
+### OpenAI 兼容 API 版本
 
 建议按以下顺序学习：
 
@@ -158,7 +248,17 @@ if response.choices[0].finish_reason == "tool_calls":
 4. **02_tool_use.py** - 扩展更多工具（文件操作）
 5. **intent_guard.py** - 理解安全防护的双 LLM 架构
 
-## 常见问题
+### Anthropic 原生 API 版本
+
+建议按以下顺序学习：
+
+1. **s00_llm_api.py** - 理解 Anthropic Messages API 基础调用
+2. **anthropic_api.py** - 学习如何封装 API（不依赖 SDK）
+3. **s00_agent_trace.py** - 理解 Agent 行为跟踪和确定性验证
+4. **01_agent_loop.py** - 理解完整的 Agent 循环实现
+5. **02_tool_use.py** - 学习多工具支持和文件操作
+
+## 常见问题与解决方案
 
 ### Q: 00_ai_chat.py 为什么会无限循环？
 
@@ -176,9 +276,39 @@ A: 检查 `response.choices[0].finish_reason`：
 
 A: 不会。`.gitignore` 已配置忽略 `config.json`，只推送 `config.json.example`（示例配置）。
 
+### Q: .env 文件会被推送到 GitHub 吗？
+
+A: 不会。`.gitignore` 已配置忽略 `.env` 文件。Anthropic 版本使用 `.env` 存储环境变量。
+
+### Q: 为什么在 WSL/Linux 下会出现编码错误？
+
+A: WSL 访问 Windows 文件系统（/mnt/d/）时，路径编码可能出现 surrogate characters。Anthropic 版本已内置 `clean_string()` 函数自动处理此问题。
+
+### Q: Windows 下命令输出乱码怎么办？
+
+A: Anthropic 版本的 `run_bash()` 函数已实现多编码自动检测（UTF-8 → GBK → latin-1），可正确处理 Windows 命令行输出。
+
+### Q: 如何在不同平台上使用？
+
+A: Anthropic 版本会自动检测操作系统（Windows/Linux/WSL/macOS），并为 LLM 生成适合当前系统的命令提示。无需手动配置。
+
+## 常见问题详细记录
+
+详细的问题分析和解决方案请查看：
+- **Anthropic 版本问题记录**：`harness/anthropic_version/s01_agent_loop/01_agent_loop.md`
+
+该文档记录了所有遇到的问题和修复方案，包括：
+- UTF-8 编码错误（surrogates not allowed）
+- stop_reason 判断错误
+- API 调用超时处理
+- Windows GBK 编码问题
+- 跨平台命令兼容性
+- 自定义 API 封装等
+
 ## 参考资料
 
 - [OpenAI API 文档 - Function Calling](https://platform.openai.com/docs/guides/function-calling)
+- [Anthropic Messages API 文档](https://docs.anthropic.com/en/api/messages)
 - [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)
 - [Claude Code 官方教程](https://github.com/anthropics/learn-claude-code)
 
