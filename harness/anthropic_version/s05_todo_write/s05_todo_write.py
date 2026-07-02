@@ -196,6 +196,7 @@ def _normalize_todos(todos):
         if t["status"] not in ("pending", "in_progress", "completed"):
             return None, f"Error: todos[{i}] has invalid status '{t['status']}'"
     return todos, None
+    
 def run_todo_write(todos: list) -> str:
     global CURRENT_TODOS
     todos, error = _normalize_todos(todos)
