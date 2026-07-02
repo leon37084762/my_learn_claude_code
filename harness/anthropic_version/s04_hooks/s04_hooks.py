@@ -130,7 +130,6 @@ TOOL_HANDLERS = {
     "glob": None,
 }
 
-
 # ── 工具实现 ─────────────────────────────────────────────────
 def run_bash(command: str) -> str:
     try:
